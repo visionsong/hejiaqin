@@ -31,7 +31,6 @@ from .const import (
     SL_DEVICES,
     DOMAIN,
 )
-#from .discovery import discover
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -71,28 +70,6 @@ def schema_defaults(schema, dps_list=None, **defaults):
             field.default = vol.default_factory(defaults[field])
     return copy
 
-async def attempt_connection(sunlogin, method = 1, *args):
-    """Create device."""
-    if method == 1:
-        res = await sunlogin.async_get_access_token_by_password(*args)
-    elif method == 2:
-        res = await sunlogin.async_get_access_token_by_sms(*args)
-    elif method == 3:
-        res = await sunlogin.async_get_access_token_by_qrcode(*args)
-    if res != "ok":
-        _LOGGER.error("Cloud API connection failed: %s", res)
-        return {"reason": "authentication_failed", "msg": res}
-
-    res = await sunlogin.async_get_devices_list()
-    if res != "ok":
-        _LOGGER.error("Cloud API get_devices_list failed: %s", res)
-        return {"reason": "device_list_failed", "msg": res}
-
-    _LOGGER.info("Cloud API connection succeeded.")
-
-    return {}
-
-
 class HejiaqinConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Hejiaqin integration."""
 
@@ -114,7 +91,6 @@ class HejiaqinConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         placeholders = {"msg": ""}
 
-
         if user_input is not None:
             phone = (user_input.get("phone") or "").strip()
             password = (user_input.get("password") or "")
@@ -130,8 +106,6 @@ class HejiaqinConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                     user_input[CONF_PHONE] = phone
                     user_input[CONF_PASSWORD] = password
                     user_input[CONF_API_KEY] = api_key
-
-           
 
             if not errors:
                 # Get devices list
@@ -158,9 +132,6 @@ class HejiaqinConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def _create_entry(self, user_input):
         """Register new entry."""
-        # if self._async_current_entries():
-        #     return self.async_abort(reason="already_configured")
-        # Use phone number as unique_id instead of API_KEY (which can change)
         unique_id = user_input.get(CONF_PHONE) or user_input.get(CONF_API_KEY)
         await self.async_set_unique_id(unique_id)
 
@@ -169,7 +140,7 @@ class HejiaqinConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             device_type = dev.get('type')
             device_id = dev.get('id')
 
-            if device_type is not None and device_id is not None: #and dev.get('connected', True)
+            if device_type is not None and device_id is not None:
                 dev[CONF_API_KEY] = user_input[CONF_API_KEY]
                 devices[device_id] = dev
         
@@ -179,7 +150,7 @@ class HejiaqinConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             CONF_DEVICES: devices, 
         }
         return self.async_create_entry(
-            title='hejiaqin',
+            title='HeJiaQin',
             data=entry,
         )
         
@@ -196,7 +167,6 @@ class HejiaqinOptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry):
         """Initialize hejiaqin options flow."""
         self._config_entry = config_entry
-        # _LOGGER.debug(config_entry.entry_id)
 
     async def async_step_init(self, user_input=None):
         """Manage basic options."""
@@ -223,34 +193,26 @@ class HejiaqinOptionsFlowHandler(config_entries.OptionsFlow):
             data_schema=schema_defaults(CONFIGURE_SCHEMA, **defaults),
         )
 
-
     async def async_step_add_device(self, user_input=None):
         scan_interval = user_input.get(CONF_SCAN_INTERVAL)
         _LOGGER.debug("scan_interval: ", scan_interval)
-
 
     async def async_step_yaml_import(self, user_input=None):
         """Manage YAML imports."""
         _LOGGER.error(
             "Configuration via YAML file is no longer supported by this integration."
         )
-        # if user_input is not None:
-        #     return self.async_create_entry(title="", data={})
-        # return self.async_show_form(step_id="yaml_import")
 
     @property
     def current_entity(self):
         """Existing configuration for entity currently being edited."""
         return self.entities[len(self.device_data[CONF_ENTITIES])]
 
-
 class CannotConnect(exceptions.HomeAssistantError):
     """Error to indicate we cannot connect."""
 
-
 class InvalidAuth(exceptions.HomeAssistantError):
     """Error to indicate there is invalid auth."""
-
 
 class EmptyDpsList(exceptions.HomeAssistantError):
     """Error to indicate no datapoints found."""
