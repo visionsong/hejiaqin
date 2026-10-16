@@ -1,4 +1,4 @@
-"""The SunLogin integration."""
+"""The HeJiaQin integration."""
 
 import asyncio
 import logging
@@ -33,7 +33,6 @@ from homeassistant.helpers.event import async_track_time_interval
 
 from .hejiaqin import DNSUpdateManger, get_hejiaqin_device, device_filter, async_get_devices_list
 from .hejiaqin_api import async_login_and_get_api_key
-# from .common import TuyaDevice, async_config_entry_by_device_id
 from .config_flow import ENTRIES_VERSION
 from .const import (
     CONFIG,
@@ -63,57 +62,25 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-UNSUB_LISTENER = "unsub_listener"
-
-RECONNECT_INTERVAL = timedelta(seconds=60)
-
-# CONFIG_SCHEMA = config_schema()
-
-CONF_DP = "dp"
-CONF_VALUE = "value"
-
-
-SERVICE_SET_DP = "set_dp"
-SERVICE_SET_DP_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_DEVICE_ID): cv.string,
-        vol.Required(CONF_DP): int,
-        vol.Required(CONF_VALUE): object,
-    }
-)
+PLATFORMS = ["switch", "sensor"] # 统一管理的组件列表
 
 async def async_setup(hass: HomeAssistant, config: dict):
-    """Set up the LocalTuya integration component."""
+    """Set up the HeJiaQin integration component."""
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][CONFIG] = {}
     hass.data[DOMAIN][CONF_RELOAD_FLAG] = []
-
-
-    async def _handle_set_dp(event):
-        scan_interval = event.data[CONF_SCAN_INTERVAL]
-        _LOGGER.debug("scan_interval: ", scan_interval)
-
     return True
 
-
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
-    """Set up LocalTuya integration from a config entry."""
-    # if entry.version < ENTRIES_VERSION:
-    #     _LOGGER.debug(
-    #         "Skipping setup for entry %s since its version (%s) is old",
-    #         entry.entry_id,
-    #         entry.version,
-    #     )
-    #     return
-
+    """Set up HeJiaQin integration from a config entry."""
     _LOGGER.debug(entry.entry_id)
     _LOGGER.debug(entry.data)
     _LOGGER.debug(hass.data[DOMAIN][CONF_RELOAD_FLAG])
     ha_version = MAJOR_VERSION * 100 + MINOR_VERSION
+    
     if entry.entry_id in hass.data[DOMAIN][CONF_RELOAD_FLAG]:
         await async_hejiaqin_reload_entry(hass, entry)
 
-    # dns_update = DNSUpdateManger(hass)
     config = {
         SL_DEVICES: list(),
     }
@@ -123,9 +90,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
         entry.data.get(CONF_USER_INPUT, {}).get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
     )
     hass.data[DOMAIN][CONF_SCAN_INTERVAL] = scan_interval
-    # hass.data[DOMAIN][CONF_DNS_UPDATE] = dns_update
-    # dns_update.dns.set_domain(PLUG_DOMAIN)
-    # dns_update.devices = config[SL_DEVICES]
 
     async def setup_entities(device_ids):
         for dev_id in device_ids:
@@ -134,43 +98,38 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry):
             if device is None: continue
             await device.async_set_scan_interval(scan_interval)
             config[SL_DEVICES].append(device)
-            # await device.async_setup()
-
 
         if ha_version >= 202408:
-            await hass.config_entries.async_forward_entry_setups(entry, ['switch','sensor'])
+            await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
         else:
             await asyncio.gather(
                 *[
                     hass.config_entries.async_forward_entry_setup(entry, platform)
-                    for platform in ['switch','sensor']
+                    for platform in PLATFORMS
                 ]
             )
 
-
-        # await dns_update.coordinator.async_config_entry_first_refresh()
         for device in config[SL_DEVICES]:
             await device.async_setup()
-        # await config_update.coordinator.async_config_entry_first_refresh()
-        #await hass.config_entries.async_reload(entry.entry_id)
-
     
     hass.async_create_task(setup_entities(entry.data[CONF_DEVICES].keys()))
     return True
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Unload an esphome config entry."""
+    """Unload a config entry."""
     _LOGGER.debug("async_unload_entry")
     _LOGGER.debug(entry.entry_id)
-    _LOGGER.debug(entry.data)
-    config = hass.data[DOMAIN][CONFIG].pop(entry.entry_id)
-    for device in config[SL_DEVICES]:
-        await device.update_manager.coordinator.async_shutdown()
+    
+    config = hass.data[DOMAIN][CONFIG].pop(entry.entry_id, None)
+    if config:
+        for device in config.get(SL_DEVICES, []):
+            await device.update_manager.coordinator.async_shutdown()
+            
     unload_ok = all(
         await asyncio.gather(
             *[
                 hass.config_entries.async_forward_entry_unload(entry, component)
-                for component in ['switch','sensor']
+                for component in PLATFORMS
             ]
         )
     )
@@ -178,30 +137,24 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN][CONF_RELOAD_FLAG].append(entry.entry_id)
     return unload_ok
 
-
-
 async def async_hejiaqin_reload_entry(hass: HomeAssistant, entry: ConfigEntry):
     """Reload entry and refresh token if needed."""
     api_key = entry.data[CONF_USER_INPUT].get(CONF_API_KEY)
     phone = entry.data[CONF_USER_INPUT].get(CONF_PHONE)
     password = entry.data[CONF_USER_INPUT].get(CONF_PASSWORD)
     
-    # Try to get devices with current API key
     error, resp = await async_get_devices_list(hass, api_key)
     
-    # If failed and we have credentials, try to re-login
     if error is not None and phone and password:
         _LOGGER.info(f"API key expired, attempting re-login for {phone}")
         login_error, new_api_key = await async_login_and_get_api_key(phone, password)
         
         if login_error is None and new_api_key:
             api_key = new_api_key
-            # Update the entry with new API key
             new_data = {**entry.data}
             new_data[CONF_USER_INPUT] = {**entry.data[CONF_USER_INPUT]}
             new_data[CONF_USER_INPUT][CONF_API_KEY] = api_key
             
-            # Update all devices with new API key
             new_devices = {}
             for dev_id, dev_config in new_data.get(CONF_DEVICES, {}).items():
                 dev_config = {**dev_config}
@@ -211,55 +164,28 @@ async def async_hejiaqin_reload_entry(hass: HomeAssistant, entry: ConfigEntry):
             
             hass.config_entries.async_update_entry(entry, data=new_data)
             _LOGGER.info(f"Successfully refreshed API key for {phone}")
-            
-            # Retry getting devices
             error, resp = await async_get_devices_list(hass, api_key)
         else:
             _LOGGER.error(f"Re-login failed for {phone}: {login_error}")
     
     if error is not None:
         _LOGGER.warning(f"Failed to get devices list: {error}")
-        hass.data[DOMAIN][CONF_RELOAD_FLAG].remove(entry.entry_id)
+        if entry.entry_id in hass.data[DOMAIN][CONF_RELOAD_FLAG]:
+            hass.data[DOMAIN][CONF_RELOAD_FLAG].remove(entry.entry_id)
         return
     
     update_flag = False
     r_json = resp.json()
     devices_list = r_json.get(CONF_DEVICES, list())
     devices = device_filter(devices_list, api_key)
-    if len(devices) != len(entry.data[CONF_DEVICES]):
+    if len(devices) != len(entry.data.get(CONF_DEVICES, {})):
         update_flag = True
 
     if update_flag:
-        devices.update(entry.data[CONF_DEVICES])
+        devices.update(entry.data.get(CONF_DEVICES, {}))
         new_data = {**entry.data}
         new_data[CONF_DEVICES] = devices
         hass.config_entries.async_update_entry(entry, data=new_data)
 
-    hass.data[DOMAIN][CONF_RELOAD_FLAG].remove(entry.entry_id)
-    _LOGGER.debug(entry.data)
-    
-
-
-# class SunloginQRView(HomeAssistantView):
-#     """Display the sunlogin code at a protected url."""
-
-#     url = "/api/sunlogin/loginqr"
-#     name = "api:sunlogin:loginqr"
-#     requires_auth = False
-
-#     async def get(self, request: web.Request) -> web.Response:
-#         """Retrieve the pairing QRCode image."""
-#         if not request.query_string:
-#             raise Unauthorized()
-#         entry_id, secret = request.query_string.split("-")
-#         _LOGGER.debug('%s, %s',entry_id, secret)
-#         if (
-#             entry_id not in request.app["hass"].data[DOMAIN]
-#             or secret
-#             != request.app["hass"].data[DOMAIN][entry_id][CONF_PAIRING_QR_SECRET]
-#         ):
-#             raise Unauthorized()
-#         return web.Response(
-#             body=request.app["hass"].data[DOMAIN][entry_id][CONF_PAIRING_QR],
-#             content_type="image/svg+xml",
-#         )
+    if entry.entry_id in hass.data[DOMAIN][CONF_RELOAD_FLAG]:
+        hass.data[DOMAIN][CONF_RELOAD_FLAG].remove(entry.entry_id)
