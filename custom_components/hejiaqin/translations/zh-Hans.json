@@ -271,7 +271,7 @@
                 "data": {
                     "phone": "手机号",
                     "password": "密码",
-                    "api_key": "API_KEY（可选）"
+
                 }
             },
             "local": {
