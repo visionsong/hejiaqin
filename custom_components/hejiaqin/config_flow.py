@@ -47,9 +47,8 @@ CONFIGURE_SCHEMA = vol.Schema(
 
 CLOUD_SETUP_SCHEMA = vol.Schema(
     {
-        vol.Optional(CONF_PHONE, default=""): cv.string,
-        vol.Optional(CONF_PASSWORD, default=""): cv.string,
-        vol.Optional(CONF_API_KEY, default=""): cv.string,
+        vol.Required("phone"): cv.string,
+        vol.Required("password"): cv.string,
     }
 )
 
@@ -115,26 +114,24 @@ class HejiaqinConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         errors = {}
         placeholders = {"msg": ""}
 
-        if user_input is not None:
-            api_key = (user_input.get(CONF_API_KEY) or "").strip()
-            phone = (user_input.get(CONF_PHONE) or "").strip()
-            password = user_input.get(CONF_PASSWORD) or ""
 
-            # Prefer API_KEY if provided
-            if not api_key:
-                if not phone or not password:
-                    errors["base"] = "missing_credentials"
-                else:
-                    login_error, api_key = await async_login_and_get_api_key(phone, password)
-                    if login_error:
-                        errors["base"] = 'authentication_failed'
-                        placeholders = {"msg": login_error}
-                    else:
-                        user_input[CONF_PHONE] = phone
-                        user_input[CONF_API_KEY] = api_key
+        if user_input is not None:
+            phone = (user_input.get("phone") or "").strip()
+            password = (user_input.get("password") or "")
+
+            if not phone or not password:
+                errors["base"] = "missing_credentials"
             else:
-                user_input[CONF_API_KEY] = api_key
-                user_input[CONF_PHONE] = phone
+                login_error, api_key = await async_login_and_get_api_key(phone, password)
+                if login_error:
+                    errors["base"] = 'authentication_failed'
+                    placeholders = {"msg": login_error}
+                else:
+                    user_input[CONF_PHONE] = phone
+                    user_input[CONF_PASSWORD] = password
+                    user_input[CONF_API_KEY] = api_key
+
+           
 
             if not errors:
                 # Get devices list
