@@ -1,3 +1,5 @@
+"""The HeJiaQin Switch integration."""
+
 from datetime import timedelta
 import logging
 
@@ -13,6 +15,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from .const import DOMAIN, CONFIG, SL_DEVICES
 
 _LOGGER = logging.getLogger(__name__)
+
 SWITCH_TYPES = {
     "led": SwitchEntityDescription(
         key="led",
@@ -92,7 +95,6 @@ SWITCH_TYPES = {
     )
 }
 
-
 async def async_setup_entry(
     hass, config_entry, async_add_entities
 ):
@@ -109,25 +111,22 @@ async def async_setup_entry(
         ]
 
         if entities_to_setup:
-
             for entity in entities_to_setup:
-                #_LOGGER.debug("switch_types: %s", SWITCH_TYPES.get(entity))
                 entities.append(
-                    SunLoginHaSwitch(
+                    HeJiaQinSwitch(
                         device,
                         entity,
                         SWITCH_TYPES.get(entity),
                     )
                 )
     
-    # async_add_entities(sensors, update_before_add=True)
     _LOGGER.debug(entities)
     async_add_entities(entities)
 
-class SunLoginHaSwitch(SwitchEntity, RestoreEntity):
-    """Tuya Switch Device."""
 
-    # ToggleEntity
+class HeJiaQinSwitch(SwitchEntity, RestoreEntity):
+    """HeJiaQin Switch Device."""
+
     _attr_has_entity_name = True
 
     def __init__(
@@ -137,7 +136,6 @@ class SunLoginHaSwitch(SwitchEntity, RestoreEntity):
         description,
         **kwargs,
     ):
-        # super().__init__(coordinator, context=switchid)
         self.device = device
         self.dp_id = switchid
         self.entity_description = description
@@ -145,7 +143,6 @@ class SunLoginHaSwitch(SwitchEntity, RestoreEntity):
         self.entity_id = f"{ENTITY_DOMAIN}.{self.device._unique_id}_{self.dp_id}"
         
         if description is None:
-            # del self._attr_has_entity_name
             del self.entity_description
             self._attr_name = switchid
         if (remark := device.memos.get(switchid)) is not None:
@@ -169,46 +166,35 @@ class SunLoginHaSwitch(SwitchEntity, RestoreEntity):
         self.async_write_ha_state()
 
     def _recv_data(self):
-        """Receive data from the update coordinator.
-
-        This event listener should be called by the coordinator whenever
-        there is an update available.
-
-        It works as a template for the _update_state() method, which should
-        be overridden by child classes in order to update the state of the
-        entities, when applicable.
-        """
+        """Receive data from the update coordinator."""
         if self._coordinator.last_update_success:
             self._update_state(self._coordinator.data)
         self.async_write_ha_state()
 
     def _update_state(self, data):
-        """Update the state of the entity.
-
-        This method should be overridden by child classes in order to
-        internalize state and attributes received from the coordinator.
-        """
+        """Update the state of the entity."""
+        pass
 
     async def async_added_to_hass(self):
         """Call when the entity is added to hass."""
-        # state = await self.async_get_last_state()
-        # _LOGGER.debug('last state %s %s', self.entity_id, state.state)
         self.async_on_remove(self._coordinator.async_add_listener(self._recv_data))
         self.device._entities.append(self)
 
     @property
     def device_info(self):
         """Return device information for the device registry."""
-        model = self.device.model
+        model = getattr(self.device, "model", "Smart Socket")
+        manufacturer = getattr(self.device, "manufacturer", "China Mobile (HeJiaQin)")
+        fw_version = getattr(self.device, "fw_version", "1.0")
+        
         return {
             "identifiers": {
-                # Serial numbers are unique identifiers within a specific domain
                 (DOMAIN, self.device._unique_id)
             },
             "name": self.device.name,
-            "manufacturer": self.device.manufacturer,
+            "manufacturer": manufacturer,
             "model": model,
-            "sw_version": self.device.fw_version,
+            "sw_version": fw_version,
         }
 
     @property
@@ -225,6 +211,3 @@ class SunLoginHaSwitch(SwitchEntity, RestoreEntity):
     def available(self):
         """Return if device is available or not."""
         return self.device.available(self.dp_id)
-        # return self.device.update_manager.available
-
-
